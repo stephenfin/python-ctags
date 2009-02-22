@@ -1,0 +1,136 @@
+"""
+Copyright (C) 2008 Aaron Diep <ahkdiep@gmail.com>
+
+This file is part of Python-Ctags.
+
+Python-Ctags is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+Python-Ctags is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Python-Ctags.  If not, see <http://www.gnu.org/licenses/>.
+"""
+
+
+include "stdlib.pxi"
+include "readtags.pxi"
+
+
+cdef class TagEntry:
+    cdef tagEntry c_entry
+
+    def __cinit__(self):
+        self.c_entry.fields.count = 0
+        self.c_entry.fields.list = NULL
+
+
+    def __setitem__(self, key, item):
+        if key == 'name':
+            self.c_entry.name = item 
+        elif key == 'file':
+            self.c_entry.file = item
+        elif key == 'pattern':
+            self.c_entry.address.pattern = item
+        elif key == 'lineNumber':
+            self.c_entry.address.lineNumber = item
+        elif key == 'kind':
+            self.c_entry.kind = item
+        elif key == 'fileScope':
+            self.c_entry.fileScope = item
+        elif key == 'fields':
+            # fields.list is allocated by readtags.c
+            if self.c_entry.fields.count != len(item):
+                return 
+
+            fields = item
+            if self.c_entry.fields.list != NULL:
+                free(self.c_entry.fields.list)
+                self.c_entry.fields.list = NULL
+
+            for k, v in fields.iteritems():
+                self.c_entry.fields.list.key = k
+                self.c_entry.fields.list.value = v
+
+    def __getitem__(self, key):
+        cdef char* result
+        if key == 'name':
+            return self.c_entry.name
+        elif key == 'file':
+            return self.c_entry.file 
+        elif key == 'pattern':
+            return self.c_entry.address.pattern 
+        elif key == 'lineNumber':
+            return self.c_entry.address.lineNumber 
+        elif key == 'kind':
+            return self.c_entry.kind
+        elif key == 'fileScope':
+            return self.c_entry.fileScope 
+        else:
+            # It will crash if we mix NULL/0/None
+            # don't mix comparison of type
+            result = ctagsField(&self.c_entry, key)
+            if result == NULL:
+                return None
+
+            return result
+
+
+
+cdef class CTags:
+    cdef tagFile* file
+    cdef tagFileInfo info
+
+    def __cinit__(self, filepath):
+        self.open(filepath)
+
+    def __dealloc__(self):
+
+        if self.file:
+            ctagsClose(self.file)
+
+    def __getitem(self, key):
+        if key == 'opened':
+            return self.info.status.opened
+        if key == 'error_number':
+            return self.info.status.error_number
+        if key == 'format':
+            return self.info.file.format
+        if key == 'sort':
+            return self.info.file.sort
+        if key == 'author':
+            return self.info.program.author
+        if key == 'name':
+            return self.info.program.name
+        if key == 'url':
+            return self.info.program.url
+        if key == 'version':
+            return self.info.program.version
+
+
+    def open(self, filepath):
+        self.file = ctagsOpen(filepath, &self.info)
+
+        if not self.info.status.opened:
+            raise Exception('Invalid tag file')
+
+    def setSortType(self, tagSortType type):
+        return ctagsSetSortType(self.file, type)
+
+    def first(self, TagEntry entry):
+        return ctagsFirst(self.file, &entry.c_entry)
+
+    def find(self, TagEntry entry, char* name, int options):
+        return ctagsFind(self.file, &entry.c_entry, name, options)
+
+    def findNext(self, TagEntry entry):
+        return ctagsFindNext(self.file, &entry.c_entry)
+
+    def next(self, TagEntry entry):
+        return ctagsNext(self.file, &entry.c_entry)
+
